@@ -13,13 +13,37 @@ const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET || '8Gd6jrxFsO';
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'dist')));
 
-// Health check
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
+// 캐시 (10분 TTL)
+const cache = new Map();
+const CACHE_TTL = 10 * 60 * 1000;
 
-// 네이버 쇼핑 검색 API
+function getCached(key) {
+  const entry = cache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > CACHE_TTL) { cache.delete(key); return null; }
+  return entry.data;
+}
+
+function setCache(key, data) {
+  cache.set(key, { data, ts: Date.now() });
+  // 캐시 크기 제한 (최대 500개)
+  if (cache.size > 500) {
+    const oldest = cache.keys().next().value;
+    cache.delete(oldest);
+  }
+}
+
+// Health check
+app.get('/health', (req, res) => res.json({ status: 'ok', cacheSize: cache.size }));
+
+// 네이버 쇼핑 검색 API (캐싱)
 app.get('/api/search', async (req, res) => {
   const { query, display = 20, sort = 'sim' } = req.query;
   if (!query) return res.status(400).json({ error: 'query 필요' });
+
+  const cacheKey = `${query}|${display}|${sort}`;
+  const cached = getCached(cacheKey);
+  if (cached) return res.json({ ...cached, cached: true });
 
   try {
     const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(query)}&display=${display}&sort=${sort}`;
@@ -55,10 +79,9 @@ app.get('/api/search', async (req, res) => {
       category4: item.category4,
     }));
 
-    res.json({
-      total: data.total,
-      items,
-    });
+    const result = { total: data.total, items };
+    setCache(cacheKey, result);
+    res.json(result);
   } catch (err) {
     console.error('네이버 API 에러:', err);
     res.status(500).json({ error: '검색 실패' });
