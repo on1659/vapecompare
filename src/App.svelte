@@ -36,7 +36,9 @@
 
   function handleSearch(e) {
     e.preventDefault();
-    query = searchInput || '전자담배 액상';
+    const input = searchInput.trim();
+    // 검색어에 "액상" 없으면 자동으로 붙임
+    query = input ? (input.includes('액상') ? input : `전자담배 액상 ${input}`) : '전자담배 액상';
     activeFilter = '';
     search(query);
     // URL 업데이트

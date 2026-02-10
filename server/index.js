@@ -61,23 +61,38 @@ app.get('/api/search', async (req, res) => {
 
     const data = await response.json();
     
-    // 필요한 필드만 정리해서 반환
-    const items = data.items.map(item => ({
-      title: item.title.replace(/<[^>]*>/g, ''), // HTML 태그 제거
-      link: item.link,
-      image: item.image,
-      lprice: Number(item.lprice),
-      hprice: Number(item.hprice) || null,
-      mallName: item.mallName,
-      productId: item.productId,
-      productType: item.productType,
-      brand: item.brand,
-      maker: item.maker,
-      category1: item.category1,
-      category2: item.category2,
-      category3: item.category3,
-      category4: item.category4,
-    }));
+    // 액상 관련 제품만 필터링
+    const LIQUID_KEYWORDS = ['액상', '쥬스', 'juice', 'liquid', '리퀴드'];
+    const EXCLUDE_KEYWORDS = ['기기', '본체', '배터리', '충전기', '코일', '팟', '케이스', '파우치', '거치대', '드립팁', '유리탱크', '실리콘'];
+
+    const items = data.items
+      .map(item => ({
+        title: item.title.replace(/<[^>]*>/g, ''),
+        link: item.link,
+        image: item.image,
+        lprice: Number(item.lprice),
+        hprice: Number(item.hprice) || null,
+        mallName: item.mallName,
+        productId: item.productId,
+        productType: item.productType,
+        brand: item.brand,
+        maker: item.maker,
+        category1: item.category1,
+        category2: item.category2,
+        category3: item.category3,
+        category4: item.category4,
+      }))
+      .filter(item => {
+        const text = (item.title + ' ' + item.category3).toLowerCase();
+        // 제외 키워드 포함 시 필터링
+        if (EXCLUDE_KEYWORDS.some(kw => text.includes(kw))) return false;
+        // 액상 관련 키워드 있거나 카테고리가 전자담배 액세서리면 통과
+        if (LIQUID_KEYWORDS.some(kw => text.includes(kw))) return true;
+        if (item.category3 && item.category3.includes('액세서리')) return true;
+        // 가격이 너무 높으면 기기일 가능성 (액상은 보통 3만원 이하)
+        if (item.lprice > 50000) return false;
+        return true;
+      });
 
     const result = { total: data.total, items };
     setCache(cacheKey, result);
