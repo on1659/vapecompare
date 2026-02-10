@@ -6,8 +6,16 @@
   let selectedItem = $state(null);
   let searchInput = $state('');
 
-  // 카테고리 퀵 필터
-  const quickFilters = [
+  // 카테고리
+  let activeCategory = $state('liquid');
+  const categories = [
+    { id: 'liquid', label: '💧 액상', query: '전자담배 액상' },
+    { id: 'device', label: '🔧 기기', query: '전자담배 기기' },
+    { id: 'coil', label: '🔩 코일', query: '전자담배 코일' },
+  ];
+
+  // 맛 퀵 필터 (액상 전용)
+  const flavorFilters = [
     { label: '🫁 폐호흡', query: '전자담배 액상 폐호흡' },
     { label: '👄 입호흡', query: '전자담배 액상 입호흡' },
     { label: '🍋 소다맛', query: '전자담배 액상 소다' },
@@ -24,7 +32,7 @@
   async function search(q = query) {
     loading = true;
     try {
-      const res = await fetch(`/api/search?query=${encodeURIComponent(q)}&display=40&sort=${sortBy}`);
+      const res = await fetch(`/api/search?query=${encodeURIComponent(q)}&display=40&sort=${sortBy}&category=${activeCategory}`);
       const data = await res.json();
       items = data.items || [];
     } catch (e) {
@@ -34,11 +42,23 @@
     loading = false;
   }
 
+  function switchCategory(cat) {
+    activeCategory = cat.id;
+    activeFilter = '';
+    searchInput = '';
+    query = cat.query;
+    search(query);
+    const params = new URLSearchParams();
+    params.set('q', query);
+    params.set('cat', cat.id);
+    window.history.pushState({}, '', '?' + params.toString());
+  }
+
   function handleSearch(e) {
     e.preventDefault();
     const input = searchInput.trim();
-    // 검색어에 "액상" 없으면 자동으로 붙임
-    query = input ? (input.includes('액상') ? input : `전자담배 액상 ${input}`) : '전자담배 액상';
+    const catBase = categories.find(c => c.id === activeCategory)?.query || '전자담배 액상';
+    query = input ? `${catBase} ${input}` : catBase;
     activeFilter = '';
     search(query);
     // URL 업데이트
@@ -50,12 +70,13 @@
 
   function applyFilter(f) {
     activeFilter = activeFilter === f.query ? '' : f.query;
-    const q = activeFilter || '전자담배 액상';
+    const q = activeFilter || categories.find(c => c.id === activeCategory)?.query || '전자담배 액상';
     query = q;
     searchInput = '';
     search(q);
     const params = new URLSearchParams();
     params.set('q', q);
+    params.set('cat', activeCategory);
     window.history.pushState({}, '', '?' + params.toString());
   }
 
@@ -77,10 +98,12 @@
   // 초기 로드
   function init() {
     const params = new URLSearchParams(window.location.search);
+    const cat = params.get('cat');
+    if (cat && categories.find(c => c.id === cat)) activeCategory = cat;
     const q = params.get('q');
     if (q) {
       query = q;
-      searchInput = q === '전자담배 액상' ? '' : q;
+      searchInput = '';
     }
     const s = params.get('sort');
     if (s) sortBy = s;
@@ -168,15 +191,27 @@
       <button type="submit">🔍</button>
     </form>
 
-    <div class="quick-filters">
-      {#each quickFilters as f}
+    <div class="category-tabs">
+      {#each categories as cat}
         <button
-          class="chip"
-          class:active={activeFilter === f.query}
-          onclick={() => applyFilter(f)}
-        >{f.label}</button>
+          class="cat-tab"
+          class:active={activeCategory === cat.id}
+          onclick={() => switchCategory(cat)}
+        >{cat.label}</button>
       {/each}
     </div>
+
+    {#if activeCategory === 'liquid'}
+      <div class="quick-filters">
+        {#each flavorFilters as f}
+          <button
+            class="chip"
+            class:active={activeFilter === f.query}
+            onclick={() => applyFilter(f)}
+          >{f.label}</button>
+        {/each}
+      </div>
+    {/if}
 
     <div class="toolbar">
       <span class="count">{items.length}개 결과</span>
@@ -257,6 +292,21 @@
     background: var(--accent); border: none; color: #fff;
     padding: 0.75rem 1.2rem; border-radius: 10px; cursor: pointer;
     font-size: 1.1rem;
+  }
+
+  /* 카테고리 탭 */
+  .category-tabs {
+    display: flex; gap: 0.5rem; margin-bottom: 0.75rem;
+  }
+  .cat-tab {
+    flex: 1; padding: 0.7rem; text-align: center;
+    background: var(--surface); border: 2px solid var(--border);
+    border-radius: 10px; cursor: pointer; font-size: 0.95rem;
+    font-weight: 600; color: var(--text2); transition: all 0.15s;
+  }
+  .cat-tab:hover { border-color: var(--accent2); }
+  .cat-tab.active {
+    background: var(--accent); border-color: var(--accent); color: #fff;
   }
 
   /* 퀵 필터 */
