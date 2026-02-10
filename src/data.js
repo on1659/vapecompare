@@ -1,14 +1,19 @@
 const shops = {
-  jg: { name: '쥬스고릴라', base: 'https://juicegorilla.com/product/' },
-  bj: { name: '배달의쥬스', base: 'https://smartstore.naver.com/delivery_juice/' },
-  vs: { name: '베이프쏘', base: 'https://vapesso.co.kr/' },
-  sm: { name: '스무디액상', base: 'https://smartstore.naver.com/smoothievape/' },
-  js: { name: '전담성지', base: 'https://jundamsungji.com/product/' },
+  jg: { name: '쥬스고릴라' },
+  bj: { name: '배달의쥬스' },
+  vs: { name: '베이프쏘' },
+  sm: { name: '스무디액상' },
+  js: { name: '전담성지' },
 };
 
 function s(shopKey, slug, price, shipping = 0) {
   const sh = shops[shopKey];
-  return { shop: sh.name, price, shipping, url: sh.base + slug };
+  return { shop: sh.name, price, shipping };
+}
+
+export function makeShopUrl(productName, shopName) {
+  const query = encodeURIComponent(`${productName} ${shopName} 전자담배 액상`);
+  return `https://search.shopping.naver.com/search/all?query=${query}`;
 }
 
 export const products = [

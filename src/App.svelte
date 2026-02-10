@@ -1,5 +1,5 @@
 <script>
-  import { products, brands, flavors, types, getLowestPrice, getSortedSellers } from './data.js';
+  import { products, brands, flavors, types, getLowestPrice, getSortedSellers, makeShopUrl } from './data.js';
 
   let selectedType = $state('');
   let selectedBrands = $state([]);
@@ -154,7 +154,7 @@
                   <span class="total-price">총 {(seller.price + seller.shipping).toLocaleString()}원</span>
                 {/if}
               </div>
-              <a class="buy-btn" href={seller.url} target="_blank" rel="noopener noreferrer">구매하기</a>
+              <a class="buy-btn" href={makeShopUrl(selectedProduct.name, seller.shop)} target="_blank" rel="noopener noreferrer">구매하기</a>
             </div>
           {/each}
         </div>
