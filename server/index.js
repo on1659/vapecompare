@@ -107,7 +107,26 @@ app.get('/api/search', async (req, res) => {
       });
     }
 
-    const result = { total: data.total, items };
+    // 중복 제거: productId 기준 → 같은 제목(공백제거) 기준 최저가만
+    const byProductId = new Map();
+    for (const item of items) {
+      const key = item.productId || item.title;
+      if (!byProductId.has(key) || item.lprice < byProductId.get(key).lprice) {
+        byProductId.set(key, item);
+      }
+    }
+    // 제목 유사도로 한번 더 (공백/특수문자 제거 후 비교)
+    const normalize = (s) => s.replace(/[\s\-\_\(\)\[\]\/]/g, '').toLowerCase();
+    const byTitle = new Map();
+    for (const item of byProductId.values()) {
+      const key = normalize(item.title);
+      if (!byTitle.has(key) || item.lprice < byTitle.get(key).lprice) {
+        byTitle.set(key, item);
+      }
+    }
+    const deduped = [...byTitle.values()];
+
+    const result = { total: deduped.length, items: deduped };
     setCache(cacheKey, result);
     res.json(result);
   } catch (err) {
