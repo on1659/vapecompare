@@ -6,6 +6,40 @@
   let selectedFlavors = $state([]);
   let sortBy = $state('price');
   let showFilters = $state(false);
+  let skipPush = false;
+
+  // URL → state (초기 로드 + popstate)
+  function loadFromURL() {
+    const params = new URLSearchParams(window.location.search);
+    selectedType = params.get('type') || '';
+    selectedBrands = params.get('brands') ? params.get('brands').split(',') : [];
+    selectedFlavors = params.get('flavors') ? params.get('flavors').split(',') : [];
+    sortBy = params.get('sort') || 'price';
+  }
+
+  // state → URL
+  function pushToURL() {
+    if (skipPush) { skipPush = false; return; }
+    const params = new URLSearchParams();
+    if (selectedType) params.set('type', selectedType);
+    if (selectedBrands.length) params.set('brands', selectedBrands.join(','));
+    if (selectedFlavors.length) params.set('flavors', selectedFlavors.join(','));
+    if (sortBy !== 'price') params.set('sort', sortBy);
+    const qs = params.toString();
+    const url = qs ? `?${qs}` : window.location.pathname;
+    window.history.pushState({}, '', url);
+  }
+
+  // 초기 로드
+  loadFromURL();
+
+  // 뒤로가기/앞으로가기
+  if (typeof window !== 'undefined') {
+    window.addEventListener('popstate', () => {
+      skipPush = true;
+      loadFromURL();
+    });
+  }
 
   function toggleArray(arr, val) {
     return arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val];
@@ -36,10 +70,29 @@
     return list;
   });
 
+  // 필터 변경 → URL 업데이트
+  $effect(() => {
+    // 의존성 트리거용 읽기
+    selectedType; selectedBrands; selectedFlavors; sortBy;
+    pushToURL();
+  });
+
   function clearAll() {
     selectedType = '';
     selectedBrands = [];
     selectedFlavors = [];
+  }
+
+  function setType(t) {
+    selectedType = selectedType === t ? '' : t;
+  }
+
+  function toggleBrand(b) {
+    selectedBrands = toggleArray(selectedBrands, b);
+  }
+
+  function toggleFlavor(f) {
+    selectedFlavors = toggleArray(selectedFlavors, f);
   }
 
   let hasFilters = $derived(selectedType || selectedBrands.length || selectedFlavors.length);
@@ -55,7 +108,7 @@
 <main>
   <div class="toolbar">
     <button class="filter-toggle" onclick={() => showFilters = !showFilters}>
-      {showFilters ? '✕ 필터 닫기' : '☰ 필터'}
+      {showFilters ? '✕ 닫기' : '☰ 필터'}
       {#if hasFilters}<span class="badge">!</span>{/if}
     </button>
     <div class="sort-group">
@@ -70,8 +123,31 @@
     <span class="count">{filtered.length}개 결과</span>
   </div>
 
+  <!-- 활성 필터 태그 -->
+  {#if hasFilters}
+    <div class="active-filters">
+      {#if selectedType}
+        <span class="tag" onclick={() => setType(selectedType)}>
+          {selectedType === 'DL' ? '폐호흡' : '입호흡'} ✕
+        </span>
+      {/if}
+      {#each selectedBrands as b}
+        <span class="tag" onclick={() => toggleBrand(b)}>{b} ✕</span>
+      {/each}
+      {#each selectedFlavors as f}
+        <span class="tag" onclick={() => toggleFlavor(f)}>{f} ✕</span>
+      {/each}
+      <button class="tag clear" onclick={clearAll}>전체 초기화</button>
+    </div>
+  {/if}
+
   <div class="layout" class:filters-open={showFilters}>
     <aside class="filters" class:open={showFilters}>
+      <div class="filter-header">
+        <h2>필터</h2>
+        <button class="close-btn" onclick={() => showFilters = false}>✕</button>
+      </div>
+
       <div class="filter-section">
         <h3>흡입방식</h3>
         <div class="chips">
@@ -79,7 +155,7 @@
             <button
               class="chip"
               class:active={selectedType === t}
-              onclick={() => selectedType = selectedType === t ? '' : t}
+              onclick={() => setType(t)}
             >
               {t === 'DL' ? '🫁 폐호흡(DL)' : '👄 입호흡(MTL)'}
             </button>
@@ -94,7 +170,7 @@
             <button
               class="chip"
               class:active={selectedBrands.includes(b)}
-              onclick={() => selectedBrands = toggleArray(selectedBrands, b)}
+              onclick={() => toggleBrand(b)}
             >{b}</button>
           {/each}
         </div>
@@ -107,7 +183,7 @@
             <button
               class="chip"
               class:active={selectedFlavors.includes(f)}
-              onclick={() => selectedFlavors = toggleArray(selectedFlavors, f)}
+              onclick={() => toggleFlavor(f)}
             >{f}</button>
           {/each}
         </div>
@@ -116,23 +192,32 @@
       {#if hasFilters}
         <button class="clear-btn" onclick={clearAll}>필터 초기화</button>
       {/if}
+
+      <button class="apply-btn" onclick={() => showFilters = false}>
+        {filtered.length}개 결과 보기
+      </button>
     </aside>
 
     <div class="grid">
       {#each filtered as p (p.id)}
-        <div class="card">
+        <a class="card" href={p.url} target="_blank" rel="noopener noreferrer">
           <div class="card-top">
             <span class="type-badge" class:dl={p.type === 'DL'}>{p.type}</span>
-            <span class="discount-badge">-{discountRate(p)}%</span>
+            {#if discountRate(p) > 0}
+              <span class="discount-badge">-{discountRate(p)}%</span>
+            {/if}
           </div>
           <h2>{p.name}</h2>
           <p class="brand">{p.brand}</p>
           <p class="flavor">{p.flavor} · {p.nic}mg</p>
           <div class="price-row">
-            <span class="original">{p.price.toLocaleString()}원</span>
+            {#if p.price !== p.discountPrice}
+              <span class="original">{p.price.toLocaleString()}원</span>
+            {/if}
             <span class="sale">{p.discountPrice.toLocaleString()}원</span>
           </div>
-        </div>
+          <span class="buy-link">구매하기 →</span>
+        </a>
       {:else}
         <div class="empty">조건에 맞는 제품이 없습니다.</div>
       {/each}
@@ -174,13 +259,39 @@
   }
   .count { color: var(--text2); font-size: 0.85rem; margin-left: auto; }
 
+  /* 활성 필터 태그 */
+  .active-filters {
+    display: flex; flex-wrap: wrap; gap: 0.4rem;
+    padding-bottom: 0.75rem;
+  }
+  .tag {
+    background: var(--accent); color: #fff;
+    padding: 0.25rem 0.6rem; border-radius: 16px;
+    font-size: 0.78rem; cursor: pointer; border: none;
+    transition: opacity 0.15s;
+  }
+  .tag:hover { opacity: 0.8; }
+  .tag.clear {
+    background: none; border: 1px solid var(--red); color: var(--red);
+  }
+
   .layout { display: flex; gap: 1.5rem; }
 
   .filters {
-    width: 240px; flex-shrink: 0;
+    width: 260px; flex-shrink: 0;
     display: none;
   }
   .filters.open { display: block; }
+
+  .filter-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 1rem;
+  }
+  .filter-header h2 { font-size: 1.1rem; font-weight: 700; }
+  .close-btn {
+    background: none; border: none; color: var(--text2);
+    font-size: 1.3rem; cursor: pointer; display: none;
+  }
 
   .filter-section { margin-bottom: 1.25rem; }
   .filter-section h3 {
@@ -201,7 +312,13 @@
   .clear-btn {
     background: none; border: 1px solid var(--red); color: var(--red);
     padding: 0.4rem 0.8rem; border-radius: 8px; cursor: pointer;
-    font-size: 0.8rem; margin-top: 0.5rem;
+    font-size: 0.8rem; margin-top: 0.5rem; width: 100%;
+  }
+  .apply-btn {
+    display: none;
+    background: var(--accent); color: #fff; border: none;
+    padding: 0.75rem; border-radius: 10px; cursor: pointer;
+    font-size: 1rem; font-weight: 600; margin-top: 1rem; width: 100%;
   }
 
   .grid {
@@ -213,11 +330,15 @@
   }
 
   .card {
+    display: block;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 1.25rem;
     transition: transform 0.15s, border-color 0.15s;
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
   }
   .card:hover {
     transform: translateY(-2px);
@@ -245,6 +366,11 @@
   .sale {
     color: var(--green); font-size: 1.15rem; font-weight: 700;
   }
+  .buy-link {
+    display: inline-block; margin-top: 0.75rem;
+    color: var(--accent); font-size: 0.85rem; font-weight: 600;
+  }
+  .card:hover .buy-link { text-decoration: underline; }
 
   .empty {
     grid-column: 1 / -1; text-align: center; padding: 3rem;
@@ -257,6 +383,8 @@
       background: var(--bg); z-index: 100; padding: 1.5rem;
       overflow-y: auto; width: 100%;
     }
+    .close-btn { display: block; }
+    .apply-btn { display: block; }
     .layout { flex-direction: column; }
     .grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
   }
