@@ -1,444 +1,372 @@
 <script>
-  import { products, brands, flavors, types, getLowestPrice, getSortedSellers, makeShopUrl } from './data.js';
+  let query = $state('전자담배 액상');
+  let sortBy = $state('sim');
+  let items = $state([]);
+  let loading = $state(false);
+  let selectedItem = $state(null);
+  let searchInput = $state('');
 
-  let selectedType = $state('');
-  let selectedBrands = $state([]);
-  let selectedFlavors = $state([]);
-  let sortBy = $state('price');
-  let showFilters = $state(false);
-  let selectedProduct = $state(null);
-  let skipPush = false;
+  // 카테고리 퀵 필터
+  const quickFilters = [
+    { label: '🫁 폐호흡', query: '전자담배 액상 폐호흡' },
+    { label: '👄 입호흡', query: '전자담배 액상 입호흡' },
+    { label: '🍋 소다맛', query: '전자담배 액상 소다' },
+    { label: '🥤 콜라맛', query: '전자담배 액상 콜라' },
+    { label: '🍑 과일맛', query: '전자담배 액상 과일' },
+    { label: '🧊 멘솔', query: '전자담배 액상 멘솔' },
+    { label: '🍰 디저트', query: '전자담배 액상 디저트' },
+    { label: '☕ 음료', query: '전자담배 액상 음료' },
+    { label: '🚬 담배맛', query: '전자담배 액상 담배맛' },
+  ];
 
-  // Parse hash: #/product/ID or empty (main page)
-  function parseHash() {
-    const hash = window.location.hash;
-    const m = hash.match(/^#\/product\/(\d+)/);
-    if (m) {
-      const p = products.find(x => x.id === +m[1]);
-      if (p) { selectedProduct = p; return; }
+  let activeFilter = $state('');
+
+  async function search(q = query) {
+    loading = true;
+    try {
+      const res = await fetch(`/api/search?query=${encodeURIComponent(q)}&display=40&sort=${sortBy}`);
+      const data = await res.json();
+      items = data.items || [];
+    } catch (e) {
+      console.error(e);
+      items = [];
     }
-    selectedProduct = null;
+    loading = false;
   }
 
-  // Parse query params for filters
-  function loadFilters() {
-    const params = new URLSearchParams(window.location.search);
-    selectedType = params.get('type') || '';
-    selectedBrands = params.get('brands') ? params.get('brands').split(',') : [];
-    selectedFlavors = params.get('flavors') ? params.get('flavors').split(',') : [];
-    sortBy = params.get('sort') || 'price';
-  }
-
-  function buildFilterQS() {
+  function handleSearch(e) {
+    e.preventDefault();
+    query = searchInput || '전자담배 액상';
+    activeFilter = '';
+    search(query);
+    // URL 업데이트
     const params = new URLSearchParams();
-    if (selectedType) params.set('type', selectedType);
-    if (selectedBrands.length) params.set('brands', selectedBrands.join(','));
-    if (selectedFlavors.length) params.set('flavors', selectedFlavors.join(','));
-    if (sortBy !== 'price') params.set('sort', sortBy);
-    const qs = params.toString();
-    return qs ? `?${qs}` : '';
+    params.set('q', query);
+    if (sortBy !== 'sim') params.set('sort', sortBy);
+    window.history.pushState({}, '', '?' + params.toString());
   }
 
-  function pushFilterURL() {
-    if (skipPush) { skipPush = false; return; }
-    const url = window.location.pathname + buildFilterQS();
-    window.history.pushState({}, '', url);
+  function applyFilter(f) {
+    activeFilter = activeFilter === f.query ? '' : f.query;
+    const q = activeFilter || '전자담배 액상';
+    query = q;
+    searchInput = '';
+    search(q);
+    const params = new URLSearchParams();
+    params.set('q', q);
+    window.history.pushState({}, '', '?' + params.toString());
   }
 
-  function goToProduct(p) {
-    selectedProduct = p;
-    window.history.pushState({}, '', window.location.pathname + buildFilterQS() + '#/product/' + p.id);
+  function changeSort(newSort) {
+    sortBy = newSort;
+    search(query);
+  }
+
+  function selectItem(item) {
+    selectedItem = item;
+    window.history.pushState({ detail: true }, '', '#/detail');
   }
 
   function goBack() {
+    selectedItem = null;
     window.history.back();
   }
 
-  // Init
-  loadFilters();
-  parseHash();
+  // 초기 로드
+  function init() {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('q');
+    if (q) {
+      query = q;
+      searchInput = q === '전자담배 액상' ? '' : q;
+    }
+    const s = params.get('sort');
+    if (s) sortBy = s;
+
+    if (window.location.hash === '#/detail' && !selectedItem) {
+      window.history.replaceState({}, '', window.location.pathname + window.location.search);
+    }
+    search(query);
+  }
+
+  init();
 
   if (typeof window !== 'undefined') {
     window.addEventListener('popstate', () => {
-      skipPush = true;
-      loadFilters();
-      parseHash();
-    });
-  }
-
-  function toggleArray(arr, val) {
-    return arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val];
-  }
-
-  let filtered = $derived.by(() => {
-    let list = products.filter(p => {
-      if (selectedType && p.type !== selectedType) return false;
-      if (selectedBrands.length && !selectedBrands.includes(p.brand)) return false;
-      if (selectedFlavors.length && !selectedFlavors.includes(p.flavor)) return false;
-      return true;
-    });
-    list.sort((a, b) => {
-      switch (sortBy) {
-        case 'price': return getLowestPrice(a) - getLowestPrice(b);
-        case 'sellers': return b.sellers.length - a.sellers.length;
-        case 'name': return a.name.localeCompare(b.name, 'ko');
-        case 'brand': return a.brand.localeCompare(b.brand) || a.name.localeCompare(b.name, 'ko');
-        default: return 0;
+      if (selectedItem && window.location.hash !== '#/detail') {
+        selectedItem = null;
       }
     });
-    return list;
-  });
+  }
 
-  $effect(() => {
-    selectedType; selectedBrands; selectedFlavors; sortBy;
-    pushFilterURL();
-  });
-
-  function clearAll() { selectedType = ''; selectedBrands = []; selectedFlavors = []; }
-  function setType(t) { selectedType = selectedType === t ? '' : t; }
-  function toggleBrand(b) { selectedBrands = toggleArray(selectedBrands, b); }
-  function toggleFlavor(f) { selectedFlavors = toggleArray(selectedFlavors, f); }
-  let hasFilters = $derived(selectedType || selectedBrands.length || selectedFlavors.length);
+  function formatPrice(n) {
+    return n ? n.toLocaleString() + '원' : '';
+  }
 </script>
 
-<header>
-  <div class="header-inner" onclick={() => { selectedProduct = null; window.history.pushState({}, '', window.location.pathname + buildFilterQS()); }} style="cursor:pointer">
-    <h1>🌬️ VapeCompare</h1>
-    <p>전자담배 액상 최저가 비교</p>
-  </div>
-</header>
-
-{#if selectedProduct}
+{#if selectedItem}
   <!-- 상세 페이지 -->
-  {@const p = selectedProduct}
-  {@const sellers = getSortedSellers(p)}
-  {@const lowest = sellers[0].price}
-  <main>
-    <button class="back-btn" onclick={goBack}>← 목록으로</button>
-
-    <div class="detail">
-      <div class="detail-header">
-        <div class="detail-badges">
-          <span class="type-badge" class:dl={p.type === 'DL'}>{p.type === 'DL' ? '폐호흡(DL)' : '입호흡(MTL)'}</span>
+  <header>
+    <div class="header-inner detail-header">
+      <button class="back-btn" onclick={goBack}>← 뒤로</button>
+      <h1>🌬️ VapeCompare</h1>
+    </div>
+  </header>
+  <main class="detail-page">
+    <div class="detail-card">
+      {#if selectedItem.image}
+        <img src={selectedItem.image} alt={selectedItem.title} class="detail-img" />
+      {/if}
+      <div class="detail-info">
+        <h2>{selectedItem.title}</h2>
+        {#if selectedItem.brand}
+          <p class="detail-brand">{selectedItem.brand}</p>
+        {/if}
+        <p class="detail-meta">
+          {selectedItem.mallName}
+          {#if selectedItem.category3} · {selectedItem.category3}{/if}
+        </p>
+        <div class="detail-price">
+          <span class="big-price">{formatPrice(selectedItem.lprice)}</span>
+          {#if selectedItem.hprice}
+            <span class="high-price">~{formatPrice(selectedItem.hprice)}</span>
+          {/if}
         </div>
-        <h2>{p.name}</h2>
-        <p class="detail-brand">{p.brand}</p>
-        <div class="detail-specs">
-          <span>🎨 {p.flavor}</span>
-          <span>💨 {p.nic}mg</span>
-          <span>🏪 {sellers.length}개 판매처</span>
-        </div>
-        <div class="detail-lowest">
-          최저가 <strong>{lowest.toLocaleString()}원</strong>
-        </div>
+        <a class="detail-buy-btn" href={selectedItem.link} target="_blank" rel="noopener noreferrer">
+          {selectedItem.mallName}에서 구매하기 →
+        </a>
       </div>
+    </div>
 
-      <div class="sellers-section">
-        <h3>판매처 가격 비교</h3>
-        <div class="sellers-list">
-          {#each sellers as seller, i}
-            <div class="seller-row" class:best={i === 0}>
-              <div class="seller-rank">{i + 1}</div>
-              <div class="seller-info">
-                <span class="seller-name">
-                  {seller.shop}
-                  {#if i === 0}<span class="best-badge">최저가</span>{/if}
-                </span>
-                <span class="seller-shipping">
-                  배송비: {seller.shipping === 0 ? '무료' : seller.shipping.toLocaleString() + '원'}
-                </span>
-              </div>
-              <div class="seller-price">
-                <strong>{seller.price.toLocaleString()}원</strong>
-                {#if seller.shipping > 0}
-                  <span class="total-price">총 {(seller.price + seller.shipping).toLocaleString()}원</span>
-                {/if}
-              </div>
-              <a class="buy-btn" href={makeShopUrl(selectedProduct.name, seller.shop)} target="_blank" rel="noopener noreferrer">구매하기</a>
-            </div>
-          {/each}
-        </div>
-      </div>
+    <!-- 같은 제품 다른 판매처 검색 -->
+    <div class="related-section">
+      <h3>🔍 다른 판매처에서 비교하기</h3>
+      <a class="compare-link" href={`https://search.shopping.naver.com/search/all?query=${encodeURIComponent(selectedItem.title)}&sort=price_asc`} target="_blank" rel="noopener noreferrer">
+        네이버 쇼핑에서 최저가 검색 →
+      </a>
     </div>
   </main>
 
 {:else}
-  <!-- 메인 리스트 -->
+  <!-- 메인 페이지 -->
+  <header>
+    <div class="header-inner">
+      <h1>🌬️ VapeCompare</h1>
+      <p>전자담배 액상 실시간 가격비교</p>
+    </div>
+  </header>
+
   <main>
+    <form class="search-bar" onsubmit={handleSearch}>
+      <input
+        type="text"
+        bind:value={searchInput}
+        placeholder="액상 검색 (브랜드, 맛, 이름...)"
+      />
+      <button type="submit">🔍</button>
+    </form>
+
+    <div class="quick-filters">
+      {#each quickFilters as f}
+        <button
+          class="chip"
+          class:active={activeFilter === f.query}
+          onclick={() => applyFilter(f)}
+        >{f.label}</button>
+      {/each}
+    </div>
+
     <div class="toolbar">
-      <button class="filter-toggle" onclick={() => showFilters = !showFilters}>
-        {showFilters ? '✕ 닫기' : '☰ 필터'}
-        {#if hasFilters}<span class="badge">!</span>{/if}
-      </button>
+      <span class="count">{items.length}개 결과</span>
       <div class="sort-group">
         <label>정렬:</label>
-        <select bind:value={sortBy}>
-          <option value="price">최저가순</option>
-          <option value="sellers">판매처 많은순</option>
-          <option value="name">이름순</option>
-          <option value="brand">브랜드순</option>
+        <select value={sortBy} onchange={(e) => changeSort(e.target.value)}>
+          <option value="sim">관련도순</option>
+          <option value="asc">가격 낮은순</option>
+          <option value="desc">가격 높은순</option>
+          <option value="date">최신순</option>
         </select>
       </div>
-      <span class="count">{filtered.length}개 결과</span>
     </div>
 
-    {#if hasFilters}
-      <div class="active-filters">
-        {#if selectedType}
-          <span class="tag" onclick={() => setType(selectedType)}>
-            {selectedType === 'DL' ? '폐호흡' : '입호흡'} ✕
-          </span>
-        {/if}
-        {#each selectedBrands as b}
-          <span class="tag" onclick={() => toggleBrand(b)}>{b} ✕</span>
+    {#if loading}
+      <div class="loading">검색 중...</div>
+    {:else}
+      <div class="grid">
+        {#each items as item (item.productId)}
+          <button class="card" onclick={() => selectItem(item)}>
+            {#if item.image}
+              <img src={item.image} alt={item.title} class="card-img" />
+            {/if}
+            <div class="card-body">
+              <h2>{item.title}</h2>
+              <p class="mall">{item.mallName}</p>
+              {#if item.brand}
+                <p class="brand">{item.brand}</p>
+              {/if}
+              <div class="price-row">
+                <span class="price">{formatPrice(item.lprice)}</span>
+                {#if item.hprice}
+                  <span class="hprice">~{formatPrice(item.hprice)}</span>
+                {/if}
+              </div>
+            </div>
+          </button>
+        {:else}
+          <div class="empty">검색 결과가 없습니다.</div>
         {/each}
-        {#each selectedFlavors as f}
-          <span class="tag" onclick={() => toggleFlavor(f)}>{f} ✕</span>
-        {/each}
-        <button class="tag clear" onclick={clearAll}>전체 초기화</button>
       </div>
     {/if}
-
-    <div class="layout" class:filters-open={showFilters}>
-      <aside class="filters" class:open={showFilters}>
-        <div class="filter-header">
-          <h2>필터</h2>
-          <button class="close-btn" onclick={() => showFilters = false}>✕</button>
-        </div>
-        <div class="filter-section">
-          <h3>흡입방식</h3>
-          <div class="chips">
-            {#each types as t}
-              <button class="chip" class:active={selectedType === t} onclick={() => setType(t)}>
-                {t === 'DL' ? '🫁 폐호흡(DL)' : '👄 입호흡(MTL)'}
-              </button>
-            {/each}
-          </div>
-        </div>
-        <div class="filter-section">
-          <h3>브랜드</h3>
-          <div class="chips">
-            {#each brands as b}
-              <button class="chip" class:active={selectedBrands.includes(b)} onclick={() => toggleBrand(b)}>{b}</button>
-            {/each}
-          </div>
-        </div>
-        <div class="filter-section">
-          <h3>맛 카테고리</h3>
-          <div class="chips">
-            {#each flavors as f}
-              <button class="chip" class:active={selectedFlavors.includes(f)} onclick={() => toggleFlavor(f)}>{f}</button>
-            {/each}
-          </div>
-        </div>
-        {#if hasFilters}
-          <button class="clear-btn" onclick={clearAll}>필터 초기화</button>
-        {/if}
-        <button class="apply-btn" onclick={() => showFilters = false}>{filtered.length}개 결과 보기</button>
-      </aside>
-
-      <div class="grid">
-        {#each filtered as p (p.id)}
-          {@const low = getLowestPrice(p)}
-          <div class="card" onclick={() => goToProduct(p)} role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && goToProduct(p)}>
-            <div class="card-top">
-              <span class="type-badge" class:dl={p.type === 'DL'}>{p.type}</span>
-              <span class="seller-count">{p.sellers.length}개 판매처</span>
-            </div>
-            <h2>{p.name}</h2>
-            <p class="brand">{p.brand}</p>
-            <p class="flavor">{p.flavor} · {p.nic}mg</p>
-            <div class="price-row">
-              <span class="sale">최저가 {low.toLocaleString()}원</span>
-            </div>
-            <span class="compare-link">가격비교 →</span>
-          </div>
-        {:else}
-          <div class="empty">조건에 맞는 제품이 없습니다.</div>
-        {/each}
-      </div>
-    </div>
   </main>
 {/if}
 
 <style>
   header {
     background: linear-gradient(135deg, #6c5ce7, #a29bfe);
-    padding: 2rem 1.5rem;
+    padding: 1.5rem;
     text-align: center;
   }
-  h1 { font-size: 1.8rem; font-weight: 800; }
-  header p { color: rgba(255,255,255,0.8); margin-top: 0.3rem; }
+  h1 { font-size: 1.6rem; font-weight: 800; }
+  header p { color: rgba(255,255,255,0.8); margin-top: 0.2rem; font-size: 0.9rem; }
 
-  main { max-width: 1200px; margin: 0 auto; padding: 1rem; }
-
-  /* Back button */
-  .back-btn {
-    background: var(--surface2); border: 1px solid var(--border);
-    color: var(--text); padding: 0.5rem 1rem; border-radius: 8px;
-    cursor: pointer; font-size: 0.9rem; margin-bottom: 1rem;
-    transition: background 0.15s;
-  }
-  .back-btn:hover { background: var(--border); }
-
-  /* Detail page */
-  .detail { max-width: 800px; margin: 0 auto; }
   .detail-header {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 1.5rem; margin-bottom: 1rem;
-  }
-  .detail-badges { margin-bottom: 0.75rem; }
-  .detail-header h2 { font-size: 1.5rem; font-weight: 800; margin-bottom: 0.3rem; }
-  .detail-brand { color: var(--accent2); font-size: 0.95rem; font-weight: 500; margin-bottom: 0.75rem; }
-  .detail-specs { display: flex; gap: 1rem; color: var(--text2); font-size: 0.85rem; flex-wrap: wrap; }
-  .detail-lowest {
-    margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);
-    font-size: 1.1rem; color: var(--text2);
-  }
-  .detail-lowest strong { color: var(--green); font-size: 1.4rem; }
-
-  .sellers-section h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; }
-  .sellers-list { display: flex; flex-direction: column; gap: 0.5rem; }
-  .seller-row {
     display: flex; align-items: center; gap: 1rem;
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 1rem 1.25rem;
-    transition: border-color 0.15s;
+    text-align: left;
   }
-  .seller-row.best { border-color: var(--green); background: rgba(0, 206, 158, 0.05); }
-  .seller-rank {
-    width: 28px; height: 28px; border-radius: 50%;
-    background: var(--surface2); color: var(--text2);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 0.8rem; font-weight: 700; flex-shrink: 0;
-  }
-  .seller-row.best .seller-rank { background: var(--green); color: #fff; }
-  .seller-info { flex: 1; min-width: 0; }
-  .seller-name { display: block; font-weight: 600; font-size: 0.95rem; }
-  .best-badge {
-    display: inline-block; background: var(--green); color: #fff;
-    font-size: 0.65rem; padding: 0.1rem 0.4rem; border-radius: 4px;
-    margin-left: 0.4rem; font-weight: 700; vertical-align: middle;
-  }
-  .seller-shipping { display: block; color: var(--text2); font-size: 0.8rem; margin-top: 0.15rem; }
-  .seller-price { text-align: right; flex-shrink: 0; }
-  .seller-price strong { font-size: 1.1rem; color: var(--text); display: block; }
-  .total-price { font-size: 0.75rem; color: var(--text2); }
-  .buy-btn {
-    background: var(--accent); color: #fff; border: none;
+  .back-btn {
+    background: rgba(255,255,255,0.2); border: none; color: #fff;
     padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer;
-    font-size: 0.85rem; font-weight: 600; text-decoration: none;
-    white-space: nowrap; flex-shrink: 0;
-    transition: opacity 0.15s;
+    font-size: 0.9rem; white-space: nowrap;
   }
-  .buy-btn:hover { opacity: 0.85; }
 
-  /* Toolbar */
+  main { max-width: 1000px; margin: 0 auto; padding: 1rem; }
+
+  /* 검색바 */
+  .search-bar {
+    display: flex; gap: 0.5rem; margin-bottom: 1rem;
+  }
+  .search-bar input {
+    flex: 1; padding: 0.75rem 1rem;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; color: var(--text); font-size: 1rem;
+  }
+  .search-bar input::placeholder { color: var(--text2); }
+  .search-bar button {
+    background: var(--accent); border: none; color: #fff;
+    padding: 0.75rem 1.2rem; border-radius: 10px; cursor: pointer;
+    font-size: 1.1rem;
+  }
+
+  /* 퀵 필터 */
+  .quick-filters {
+    display: flex; flex-wrap: wrap; gap: 0.4rem;
+    margin-bottom: 1rem;
+  }
+  .chip {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text2); padding: 0.4rem 0.8rem; border-radius: 20px;
+    cursor: pointer; font-size: 0.82rem; transition: all 0.15s;
+  }
+  .chip:hover { border-color: var(--accent2); color: var(--text); }
+  .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
   .toolbar {
-    display: flex; align-items: center; gap: 1rem;
-    padding: 0.75rem 0; flex-wrap: wrap;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.5rem 0; margin-bottom: 0.5rem;
   }
-  .filter-toggle {
-    background: var(--surface2); border: 1px solid var(--border);
-    color: var(--text); padding: 0.5rem 1rem; border-radius: 8px;
-    cursor: pointer; position: relative; font-size: 0.9rem;
-  }
-  .badge {
-    position: absolute; top: -4px; right: -4px;
-    background: var(--red); color: #fff; border-radius: 50%;
-    width: 16px; height: 16px; font-size: 10px;
-    display: flex; align-items: center; justify-content: center;
-  }
+  .count { color: var(--text2); font-size: 0.85rem; }
   .sort-group { display: flex; align-items: center; gap: 0.5rem; }
   .sort-group label { color: var(--text2); font-size: 0.85rem; }
   .sort-group select {
     background: var(--surface2); color: var(--text); border: 1px solid var(--border);
     padding: 0.4rem 0.6rem; border-radius: 8px; font-size: 0.85rem;
   }
-  .count { color: var(--text2); font-size: 0.85rem; margin-left: auto; }
 
-  .active-filters { display: flex; flex-wrap: wrap; gap: 0.4rem; padding-bottom: 0.75rem; }
-  .tag {
-    background: var(--accent); color: #fff;
-    padding: 0.25rem 0.6rem; border-radius: 16px;
-    font-size: 0.78rem; cursor: pointer; border: none;
-    transition: opacity 0.15s;
-  }
-  .tag:hover { opacity: 0.8; }
-  .tag.clear { background: none; border: 1px solid var(--red); color: var(--red); }
-
-  .layout { display: flex; gap: 1.5rem; }
-  .filters { width: 260px; flex-shrink: 0; display: none; }
-  .filters.open { display: block; }
-  .filter-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-  .filter-header h2 { font-size: 1.1rem; font-weight: 700; }
-  .close-btn { background: none; border: none; color: var(--text2); font-size: 1.3rem; cursor: pointer; display: none; }
-  .filter-section { margin-bottom: 1.25rem; }
-  .filter-section h3 { font-size: 0.8rem; text-transform: uppercase; color: var(--text2); margin-bottom: 0.5rem; letter-spacing: 0.05em; }
-  .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-  .chip {
-    background: var(--surface); border: 1px solid var(--border);
-    color: var(--text2); padding: 0.35rem 0.7rem; border-radius: 20px;
-    cursor: pointer; font-size: 0.8rem; transition: all 0.15s;
-  }
-  .chip:hover { border-color: var(--accent2); color: var(--text); }
-  .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .clear-btn {
-    background: none; border: 1px solid var(--red); color: var(--red);
-    padding: 0.4rem 0.8rem; border-radius: 8px; cursor: pointer;
-    font-size: 0.8rem; margin-top: 0.5rem; width: 100%;
-  }
-  .apply-btn {
-    display: none; background: var(--accent); color: #fff; border: none;
-    padding: 0.75rem; border-radius: 10px; cursor: pointer;
-    font-size: 1rem; font-weight: 600; margin-top: 1rem; width: 100%;
+  .loading {
+    text-align: center; padding: 3rem; color: var(--text2); font-size: 1.1rem;
   }
 
   .grid {
-    flex: 1;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: 1rem; align-content: start;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
   }
+
   .card {
-    display: block; background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 1.25rem;
-    transition: transform 0.15s, border-color 0.15s;
-    cursor: pointer;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden;
+    cursor: pointer; transition: transform 0.15s, border-color 0.15s;
+    text-align: left; width: 100%; padding: 0;
+    color: inherit;
   }
   .card:hover { transform: translateY(-2px); border-color: var(--accent2); }
-  .card-top { display: flex; justify-content: space-between; margin-bottom: 0.75rem; }
-  .type-badge {
-    background: var(--surface2); color: var(--text2);
-    padding: 0.2rem 0.6rem; border-radius: 6px; font-size: 0.75rem; font-weight: 600;
+
+  .card-img {
+    width: 100%; aspect-ratio: 1; object-fit: cover;
+    background: var(--surface2);
   }
-  .type-badge.dl { background: #2d3436; color: var(--accent2); }
-  .seller-count { color: var(--text2); font-size: 0.75rem; }
-  .card h2 { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.3rem; }
-  .brand { color: var(--accent2); font-size: 0.85rem; font-weight: 500; }
-  .flavor { color: var(--text2); font-size: 0.8rem; margin: 0.25rem 0 0.75rem; }
-  .price-row { display: flex; align-items: baseline; gap: 0.5rem; }
-  .sale { color: var(--green); font-size: 1.15rem; font-weight: 700; }
+  .card-body { padding: 0.75rem; }
+  .card h2 {
+    font-size: 0.88rem; font-weight: 600;
+    line-height: 1.3; margin-bottom: 0.4rem;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .mall { color: var(--accent2); font-size: 0.78rem; margin-bottom: 0.15rem; }
+  .brand { color: var(--text2); font-size: 0.75rem; margin-bottom: 0.4rem; }
+  .price-row { display: flex; align-items: baseline; gap: 0.4rem; }
+  .price { color: var(--green); font-size: 1.05rem; font-weight: 700; }
+  .hprice { color: var(--text2); font-size: 0.8rem; }
+
+  .empty {
+    grid-column: 1 / -1; text-align: center; padding: 3rem;
+    color: var(--text2);
+  }
+
+  /* 상세 페이지 */
+  .detail-page { padding-top: 1.5rem; }
+  .detail-card {
+    display: flex; gap: 1.5rem;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 1.5rem; margin-bottom: 1.5rem;
+  }
+  .detail-img {
+    width: 200px; height: 200px; object-fit: cover; border-radius: 10px;
+    background: var(--surface2); flex-shrink: 0;
+  }
+  .detail-info { flex: 1; }
+  .detail-info h2 { font-size: 1.2rem; font-weight: 700; margin-bottom: 0.5rem; }
+  .detail-brand { color: var(--accent2); font-size: 0.9rem; margin-bottom: 0.25rem; }
+  .detail-meta { color: var(--text2); font-size: 0.85rem; margin-bottom: 1rem; }
+  .detail-price { margin-bottom: 1rem; }
+  .big-price { color: var(--green); font-size: 1.5rem; font-weight: 700; }
+  .high-price { color: var(--text2); font-size: 0.9rem; margin-left: 0.5rem; }
+
+  .detail-buy-btn {
+    display: inline-block;
+    background: var(--accent); color: #fff; text-decoration: none;
+    padding: 0.75rem 1.5rem; border-radius: 10px;
+    font-weight: 600; font-size: 1rem;
+    transition: opacity 0.15s;
+  }
+  .detail-buy-btn:hover { opacity: 0.85; }
+
+  .related-section {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 1.25rem;
+  }
+  .related-section h3 { font-size: 1rem; margin-bottom: 0.75rem; }
   .compare-link {
-    display: inline-block; margin-top: 0.75rem;
-    color: var(--accent); font-size: 0.85rem; font-weight: 600;
+    color: var(--accent); font-weight: 600; text-decoration: none;
+    font-size: 0.95rem;
   }
-  .card:hover .compare-link { text-decoration: underline; }
-  .empty { grid-column: 1 / -1; text-align: center; padding: 3rem; color: var(--text2); font-size: 1.1rem; }
+  .compare-link:hover { text-decoration: underline; }
 
-  @media (max-width: 768px) {
-    .filters {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      background: var(--bg); z-index: 100; padding: 1.5rem;
-      overflow-y: auto; width: 100%;
-    }
-    .close-btn { display: block; }
-    .apply-btn { display: block; }
-    .layout { flex-direction: column; }
-    .grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
-
-    .seller-row { flex-wrap: wrap; gap: 0.5rem; }
-    .seller-price { text-align: left; }
-    .buy-btn { width: 100%; text-align: center; }
+  @media (max-width: 600px) {
+    .detail-card { flex-direction: column; }
+    .detail-img { width: 100%; height: auto; aspect-ratio: 1; }
+    .grid { grid-template-columns: repeat(2, 1fr); gap: 0.6rem; }
+    .card-body { padding: 0.5rem; }
+    .card h2 { font-size: 0.8rem; }
   }
 </style>
